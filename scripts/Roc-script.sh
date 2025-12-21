@@ -1,7 +1,18 @@
-# 修改默认IP & 固件名称 & 编译署名
+# 修改默认IP & 固件名称 & 编译署名和时间
 sed -i 's/192.168.1.1/192.168.2.1/g' package/base-files/files/bin/config_generate
 sed -i "s/hostname='.*'/hostname='Roc'/g" package/base-files/files/bin/config_generate
-sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ Built by Roc')/g" feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js
+sed -i "s#_('Firmware Version'), (L\.isObject(boardinfo\.release) ? boardinfo\.release\.description + ' / ' : '') + (luciversion || ''),# \
+            _('Firmware Version'),\n \
+            E('span', {}, [\n \
+                (L.isObject(boardinfo.release)\n \
+                ? boardinfo.release.description + ' / '\n \
+                : '') + (luciversion || '') + ' / ',\n \
+            E('a', {\n \
+                href: 'https://github.com/laipeng668/openwrt-ci-roc/releases',\n \
+                target: '_blank',\n \
+                rel: 'noopener noreferrer'\n \
+                }, [ 'Built by Roc $(date "+%Y-%m-%d %H:%M:%S")' ])\n \
+            ]),#" feeds/luci/modules/luci-mod-status/htdocs/luci-static/resources/view/status/include/10_system.js
 
 # 移除luci-app-attendedsysupgrade软件包
 sed -i "/attendedsysupgrade/d" $(find ./feeds/luci/collections/ -type f -name "Makefile")
@@ -13,8 +24,10 @@ sed -i "/attendedsysupgrade/d" $(find ./feeds/luci/collections/ -type f -name "M
 # sed -i 's/reg = <0x0 0x4ab00000 0x0 0x[0-9a-f]\+>/reg = <0x0 0x4ab00000 0x0 0x06000000>/' target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq6018-512m.dtsi
 
 # 移除要替换的包
+rm -rf feeds/luci/applications/luci-app-argon-config
 rm -rf feeds/luci/applications/luci-app-wechatpush
 rm -rf feeds/luci/applications/luci-app-appfilter
+rm -rf feeds/luci/applications/luci-app-watchcat
 rm -rf feeds/luci/applications/luci-app-frpc
 rm -rf feeds/luci/applications/luci-app-frps
 rm -rf feeds/luci/themes/luci-theme-argon
@@ -23,6 +36,7 @@ rm -rf feeds/packages/net/adguardhome
 rm -rf feeds/packages/net/ariang
 rm -rf feeds/packages/net/frp
 rm -rf feeds/packages/lang/golang
+rm -rf feeds/packages/utils/watchcat
 
 # Git稀疏克隆，只克隆指定目录到本地
 function git_sparse_clone() {
@@ -42,11 +56,18 @@ git_sparse_clone frp https://github.com/laipeng668/luci applications/luci-app-fr
 mv -f package/luci-app-frpc feeds/luci/applications/luci-app-frpc
 mv -f package/luci-app-frps feeds/luci/applications/luci-app-frps
 git_sparse_clone master https://github.com/kenzok8/openwrt-packages adguardhome luci-app-adguardhome
+git_sparse_clone openwrt-23.05 https://github.com/immortalwrt/packages utils/watchcat
+mv -f package/watchcat feeds/packages/utils/watchcat
+git_sparse_clone openwrt-23.05 https://github.com/immortalwrt/luci applications/luci-app-watchcat
+mv -f package/luci-app-watchcat feeds/luci/applications/luci-app-watchcat
 git_sparse_clone main https://github.com/VIKINGYFY/packages luci-app-wolplus
 git clone --depth=1 https://github.com/jerrykuku/luci-theme-argon feeds/luci/themes/luci-theme-argon
+git clone --depth=1 https://github.com/jerrykuku/luci-app-argon-config feeds/luci/applications/luci-app-argon-config
 git clone --depth=1 https://github.com/eamonxg/luci-theme-aurora feeds/luci/themes/luci-theme-aurora
+git clone --depth=1 https://github.com/eamonxg/luci-app-aurora-config feeds/luci/applications/luci-app-aurora-config
 git clone --depth=1 https://github.com/sbwml/packages_lang_golang feeds/packages/lang/golang
 git clone --depth=1 https://github.com/sbwml/luci-app-openlist2 package/openlist2
+git clone --depth=1 https://github.com/gdy666/luci-app-lucky package/luci-app-lucky
 git clone --depth=1 https://github.com/tty228/luci-app-wechatpush package/luci-app-wechatpush
 git clone --depth=1 https://github.com/destan19/OpenAppFilter.git package/OpenAppFilter
 git clone --depth=1 https://github.com/lwb1978/openwrt-gecoosac package/openwrt-gecoosac
