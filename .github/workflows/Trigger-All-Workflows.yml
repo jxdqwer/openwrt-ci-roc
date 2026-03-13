@@ -7,9 +7,8 @@ on:
 
 jobs:
 
-    Arthur-Athena-Taiyi-ImmortalWrt:
-      uses: ./.github/workflows/Arthur&Athena&Taiyi-ImmortalWrt.yml
+    JDCloud-NoWiFi-ImmortalWrt:
+      uses: ./.github/workflows/JDCloud-NoWiFi-ImmortalWrt.yml
 
     x86-64-ImmortalWrt:
       uses: ./.github/workflows/x86-64-ImmortalWrt.yml
-
