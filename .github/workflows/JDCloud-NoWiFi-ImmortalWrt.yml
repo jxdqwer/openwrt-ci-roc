@@ -8,13 +8,11 @@ on:
 
 env:
   REPO_URL: https://github.com/laipeng668/immortalwrt.git
-  REPO_BRANCH: openwrt-25.12
+  REPO_BRANCH: master
   CONFIG_FILE: configs/JDCloud.NoWiFi.config
   GENERAL_CONFIG_FILE: configs/General.config
   DIY_SCRIPT: scripts/Roc-script.sh
   CLASH_KERNEL: amd64
-  UPLOAD_BIN_DIR: false
-  FIRMWARE_RELEASE: true
   FIRMWARE_TAG: JDCloud
   TZ: Asia/Shanghai
 
@@ -109,6 +107,8 @@ jobs:
       run: |
         cat $CONFIG_FILE $GENERAL_CONFIG_FILE > $OPENWRT_PATH/.config
         cd $OPENWRT_PATH
+        # 修改配置文件(1.5GHz频率电压从0.9375V提高到0.96V)
+        sed -i 's/opp-microvolt = <937500>;/opp-microvolt = <960000>;/' target/linux/qualcommax/patches-6.12/0038-v6.16-arm64-dts-qcom-ipq6018-add-1.5GHz-CPU-Frequency.patch
         make defconfig
         make download -j$(nproc)
 
@@ -126,13 +126,6 @@ jobs:
       if: (!cancelled())
       run: df -hT
 
-    - name: Upload Bin Directory(上传固件)
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
-      uses: actions/upload-artifact@main
-      with:
-        name: ${{ env.SOURCE_REPO }}-bin-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBTARGET }}-${{ env.FILE_DATE }}
-        path: ${{ env.OPENWRT_PATH }}/bin
-
     - name: Organize Files(整理文件)
       if: steps.compile.outputs.status == 'success'
       run: |
@@ -148,15 +141,8 @@ jobs:
         rm -rf packages feeds.buildinfo version.buildinfo sha256sums profiles.json
         echo "FIRMWARE_PATH=$PWD" >> $GITHUB_ENV
 
-    - name: Upload Firmware To Artifact(将固件上传到Artifact)
-      if: steps.compile.outputs.status == 'success' && env.FIRMWARE_RELEASE != 'true'
-      uses: actions/upload-artifact@main
-      with:
-        name: ${{ env.SOURCE_REPO }}-firmware-${{ env.DEVICE_TARGET }}-${{ env.DEVICE_SUBTARGET }}-${{ env.FILE_DATE }}
-        path: ${{ env.FIRMWARE_PATH }}
-
     - name: Upload Firmware To Release(发布固件)
-      if: steps.compile.outputs.status == 'success' && env.FIRMWARE_RELEASE == 'true'
+      if: steps.compile.outputs.status == 'success'
       uses: ncipollo/release-action@main
       with:
         name: ${{ env.DATE }} for ${{ env.FIRMWARE_TAG }}
@@ -190,10 +176,3 @@ jobs:
         echo "staging: $(du -sh $OPENWRT_PATH/staging_dir | cut -f 1)"
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Delete Old Workflows(删除旧工作流)
-      uses: Mattraks/delete-workflow-runs@main
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        retain_days: 2
-        keep_minimum_runs: 0
