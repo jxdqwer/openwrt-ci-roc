@@ -197,7 +197,12 @@ jobs:
           zip \
           zlib1g-dev \
           zstd
-        sudo timedatectl set-timezone "$TZ"
+        echo "==> [init] apt 安装完成"
+        # 不使用 timedatectl（依赖 D-Bus，曾在 runner 上无限挂起直到超时），改用文件方式设置时区
+        sudo ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime
+        echo "$TZ" | sudo tee /etc/timezone > /dev/null
+        date
+        echo "==> [init] 环境初始化完成"
 
     - name: Checkout(检出代码)
       uses: actions/checkout@v4

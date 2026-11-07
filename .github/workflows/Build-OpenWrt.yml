@@ -110,8 +110,12 @@ jobs:
           libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libfuse-dev libssl-dev libtool lrzsz \
           genisoimage msmtp nano ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip libpython3-dev qemu-utils \
           rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
-        sudo -E systemctl daemon-reload
-        sudo timedatectl set-timezone "$TZ"
+        echo "==> [init] apt 安装完成"
+        # 不使用 systemctl/timedatectl（依赖 D-Bus，曾在 runner 上无限挂起直到超时），改用文件方式设置时区
+        sudo ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime
+        echo "$TZ" | sudo tee /etc/timezone > /dev/null
+        date
+        echo "==> [init] 环境初始化完成"
 
     - name: Checkout(检出代码)
       uses: actions/checkout@v4
