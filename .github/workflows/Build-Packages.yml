@@ -169,8 +169,10 @@ jobs:
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
+        install_dependencies() {
         sudo -E apt-get -y update
-        sudo -E apt-get -y install \
+        # timeout 防止 apt 无限挂起（曾出现平台侧卡死导致 job 6 小时超时）
+        sudo -E timeout 900 apt-get -y install \
           build-essential \
           clang \
           curl \
@@ -197,7 +199,21 @@ jobs:
           zip \
           zlib1g-dev \
           zstd
-        echo "==> [init] apt 安装完成"
+        }
+        for attempt in 1 2 3; do
+          if install_dependencies; then
+            echo "==> [init] apt 安装完成 (attempt $attempt)"
+            break
+          fi
+          if [ "$attempt" -eq 3 ]; then
+            echo "Error: dependency installation failed after $attempt attempts" >&2
+            exit 1
+          fi
+          echo "::warning::apt install failed or timed out (attempt $attempt/3); recovering dpkg state and retrying."
+          sudo killall -q apt-get apt dpkg || true
+          sudo timeout 300 dpkg --configure -a || true
+          sleep $((attempt * 10))
+        done
         # 不使用 timedatectl（依赖 D-Bus，曾在 runner 上无限挂起直到超时），改用文件方式设置时区
         sudo ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime
         echo "$TZ" | sudo tee /etc/timezone > /dev/null

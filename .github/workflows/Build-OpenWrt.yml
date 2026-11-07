@@ -103,14 +103,30 @@ jobs:
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
-        sudo -E apt-get -y update
-        sudo -E apt-get -y install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
-          bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib \
-          git gperf haveged help2man intltool jq libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev \
-          libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libfuse-dev libssl-dev libtool lrzsz \
-          genisoimage msmtp nano ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip libpython3-dev qemu-utils \
-          rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
-        echo "==> [init] apt 安装完成"
+        install_dependencies() {
+          sudo -E apt-get -y update
+          # timeout 防止 apt 无限挂起（曾出现平台侧卡死导致 job 6 小时超时）
+          sudo -E timeout 1500 apt-get -y install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+            bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib \
+            git gperf haveged help2man intltool jq libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev \
+            libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libfuse-dev libssl-dev libtool lrzsz \
+            genisoimage msmtp nano ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip libpython3-dev qemu-utils \
+            rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+        }
+        for attempt in 1 2 3; do
+          if install_dependencies; then
+            echo "==> [init] apt 安装完成 (attempt $attempt)"
+            break
+          fi
+          if [ "$attempt" -eq 3 ]; then
+            echo "Error: dependency installation failed after $attempt attempts" >&2
+            exit 1
+          fi
+          echo "::warning::apt install failed or timed out (attempt $attempt/3); recovering dpkg state and retrying."
+          sudo killall -q apt-get apt dpkg || true
+          sudo timeout 300 dpkg --configure -a || true
+          sleep $((attempt * 10))
+        done
         # 不使用 systemctl/timedatectl（依赖 D-Bus，曾在 runner 上无限挂起直到超时），改用文件方式设置时区
         sudo ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime
         echo "$TZ" | sudo tee /etc/timezone > /dev/null
