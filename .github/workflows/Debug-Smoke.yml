@@ -1,0 +1,218 @@
+# 调试用冒烟测试工作流：验证初始化环境与构建前置链路，无需完整编译。
+# 验证通过后可删除本文件。手动触发：Actions -> Debug-Smoke -> Run workflow
+name: Debug-Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      config_file:
+        description: 用于链路测试的设备配置文件
+        required: false
+        type: choice
+        default: configs/x86-64.config
+        options:
+          - configs/x86-64.config
+          - configs/JDCloud.NoWiFi.config
+          - configs/JDCloud.config
+
+permissions:
+  contents: read
+
+concurrency:
+  group: debug-smoke-${{ github.repository }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  GENERAL_CONFIG_FILE: configs/General.config
+  DIY_SCRIPT: scripts/Roc-script.sh
+  OPENWRT_PATH: /mnt/openwrt
+  TZ: Asia/Shanghai
+
+jobs:
+
+  Init-Test:
+    name: Init-Test(初始化环境测试)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+    - name: Check Server Performance(检查服务器性能)
+      run: |
+        echo "--------------------------CPU信息--------------------------"
+        grep name /proc/cpuinfo | cut -f2 -d: | uniq -c
+        echo "--------------------------内存信息--------------------------"
+        free -h
+        echo "--------------------------硬盘信息--------------------------"
+        df -hT
+
+    - name: Initialization Environment(初始化环境,与正式构建一致)
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        SECONDS=0
+        install_dependencies() {
+          sudo -E apt-get -y update
+          # timeout 防止 apt 无限挂起（曾出现平台侧卡死导致 job 6 小时超时）
+          sudo -E timeout 1500 apt-get -y install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+            bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib \
+            git gperf haveged help2man intltool jq libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev \
+            libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libfuse-dev libssl-dev libtool lrzsz \
+            genisoimage msmtp nano ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip libpython3-dev qemu-utils \
+            rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+        }
+        for attempt in 1 2 3; do
+          if install_dependencies; then
+            echo "==> [init] apt 安装完成 (attempt $attempt, ${SECONDS}s)"
+            break
+          fi
+          if [ "$attempt" -eq 3 ]; then
+            echo "Error: dependency installation failed after $attempt attempts" >&2
+            exit 1
+          fi
+          echo "::warning::apt install failed or timed out (attempt $attempt/3); recovering dpkg state and retrying."
+          sudo killall -q apt-get apt dpkg || true
+          sudo timeout 300 dpkg --configure -a || true
+          sleep $((attempt * 10))
+        done
+        # 不使用 systemctl/timedatectl（依赖 D-Bus，曾在 runner 上无限挂起直到超时），改用文件方式设置时区
+        sudo ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime
+        echo "$TZ" | sudo tee /etc/timezone > /dev/null
+        date
+        echo "==> [init] 环境初始化完成 (总耗时 ${SECONDS}s)"
+
+  Pipeline-Test:
+    name: Pipeline-Test(构建前置链路测试)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      CONFIG_FILE: ${{ inputs.config_file }}
+    steps:
+    - name: Initialization Environment(初始化环境,与正式构建一致)
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        SECONDS=0
+        install_dependencies() {
+          sudo -E apt-get -y update
+          sudo -E timeout 1500 apt-get -y install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+            bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib \
+            git gperf haveged help2man intltool jq libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev \
+            libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libfuse-dev libssl-dev libtool lrzsz \
+            genisoimage msmtp nano ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip libpython3-dev qemu-utils \
+            rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+        }
+        for attempt in 1 2 3; do
+          if install_dependencies; then
+            echo "==> [init] apt 安装完成 (attempt $attempt, ${SECONDS}s)"
+            break
+          fi
+          if [ "$attempt" -eq 3 ]; then
+            echo "Error: dependency installation failed after $attempt attempts" >&2
+            exit 1
+          fi
+          echo "::warning::apt install failed or timed out (attempt $attempt/3); recovering dpkg state and retrying."
+          sudo killall -q apt-get apt dpkg || true
+          sudo timeout 300 dpkg --configure -a || true
+          sleep $((attempt * 10))
+        done
+        sudo ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime
+        echo "$TZ" | sudo tee /etc/timezone > /dev/null
+        date
+        echo "==> [init] 环境初始化完成 (总耗时 ${SECONDS}s)"
+
+    - name: Checkout(检出代码)
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+
+    - name: Clone Source Code(克隆源代码,与正式构建一致)
+      env:
+        REPO_URL: https://github.com/laipeng668/immortalwrt.git
+        REPO_BRANCH: openwrt-25.12
+      run: |
+        SECONDS=0
+        sudo mkdir -p "$OPENWRT_PATH"
+        sudo chown -R "$(id -u):$(id -g)" "$OPENWRT_PATH"
+        for attempt in 1 2 3; do
+          if git clone --depth 1 -b "$REPO_BRANCH" --single-branch "$REPO_URL" "$OPENWRT_PATH"; then
+            break
+          fi
+          if [ "$attempt" -eq 3 ]; then
+            echo "Error: source clone failed after $attempt attempts" >&2
+            exit 1
+          fi
+          echo "::warning::Source clone failed (attempt $attempt/3); retrying."
+          sudo rm -rf "$OPENWRT_PATH"
+          sudo mkdir -p "$OPENWRT_PATH"
+          sudo chown -R "$(id -u):$(id -g)" "$OPENWRT_PATH"
+          sleep $((attempt * 5))
+        done
+        echo "==> [smoke] 源码克隆完成 (${SECONDS}s)"
+
+    - name: Disable Mainland Mirrors(屏蔽大陆下载源,与正式构建一致)
+      run: |
+        cd "$OPENWRT_PATH"
+        mirror_file="scripts/projectsmirrors.json"
+        jq '
+          with_entries(
+            .value |= map(select(
+              test("^https?://(mirrors\\.tencent\\.com|mirrors\\.aliyun\\.com|mirrors\\.tuna\\.tsinghua\\.edu\\.cn|mirrors\\.ustc\\.edu\\.cn|mirror\\.iscas\\.ac\\.cn|mirror\\.nju\\.edu\\.cn)(/|$)")
+              | not
+            ))
+          )
+        ' "$mirror_file" > "$mirror_file.tmp"
+        mv "$mirror_file.tmp" "$mirror_file"
+        sed -i '/raw\.gitmirror\.com/d' scripts/download.pl
+        echo "==> [smoke] 大陆镜像源屏蔽完成"
+
+    - name: Update Feeds(更新feeds,与正式构建一致)
+      run: |
+        cd "$OPENWRT_PATH"
+        ./scripts/feeds update -a
+        echo "==> [smoke] feeds 更新完成"
+
+    - name: Load Custom Configuration(加载自定义配置,与正式构建一致)
+      run: |
+        chmod +x "$GITHUB_WORKSPACE/$DIY_SCRIPT"
+        cd "$OPENWRT_PATH"
+        "$GITHUB_WORKSPACE/$DIY_SCRIPT" \
+          "$GITHUB_WORKSPACE/$CONFIG_FILE" \
+          "$GITHUB_WORKSPACE/$GENERAL_CONFIG_FILE"
+        echo "==> [smoke] Roc-script 自定义配置加载完成"
+
+    - name: Merge Config & defconfig(合并配置并校验,与正式构建一致)
+      run: |
+        cat "$GITHUB_WORKSPACE/$CONFIG_FILE" "$GITHUB_WORKSPACE/$GENERAL_CONFIG_FILE" > "$OPENWRT_PATH/.config"
+        if [ "$CONFIG_FILE" = "configs/x86-64.config" ]; then
+          sed -i '/CONFIG_PACKAGE_sqm-scripts-nss=y/d' "$OPENWRT_PATH/.config"
+        fi
+        cd "$OPENWRT_PATH"
+        make defconfig
+        echo "目标平台: $(awk -F '"' '/CONFIG_TARGET_BOARD/ {print $2; exit}' .config)/$(awk -F '"' '/CONFIG_TARGET_SUBTARGET/ {print $2; exit}' .config)"
+        echo "启用软件包数: $(grep -c '^CONFIG_PACKAGE_.*=y' .config)"
+        echo "==> [smoke] 配置合并与 defconfig 校验通过"
+
+    - name: Download DL Package(下载DL软件包,与正式构建一致)
+      run: |
+        cd "$OPENWRT_PATH"
+        for attempt in 1 2 3; do
+          if make download -j"$(nproc)"; then
+            break
+          fi
+          if [ "$attempt" -eq 3 ]; then
+            echo "Error: make download failed after $attempt attempts" >&2
+            exit 1
+          fi
+          echo "::warning::make download failed (attempt $attempt/3); removing incomplete files before retry."
+          find dl -type f -size -1024c -print -delete
+          sleep $((attempt * 5))
+        done
+        echo "==> [smoke] DL 软件包下载完成"
+
+    - name: Smoke Result(冒烟测试结论)
+      run: |
+        echo "==> [smoke] 全部前置链路通过：初始化环境 / 克隆源码 / 镜像屏蔽 / feeds / Roc-script / defconfig / make download"
+        echo "==> [smoke] 正式固件编译的前置阶段已验证可跑通，可直接触发正式工作流。"
