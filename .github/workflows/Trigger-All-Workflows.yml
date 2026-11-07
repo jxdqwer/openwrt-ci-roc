@@ -2,13 +2,54 @@ name: Trigger-All-Workflows  # 主要工作流的名称
 
 on:
   workflow_dispatch:  # 手动触发：通过 GitHub UI 来触发
+    inputs:
+      jdcloud_nowifi_immortalwrt:
+        description: 运行 JDCloud-NoWiFi-ImmortalWrt
+        required: false
+        type: boolean
+        default: true
+      x86_64_immortalwrt:
+        description: 运行 x86-64-ImmortalWrt
+        required: false
+        type: boolean
+        default: true
+      build_packages:
+        description: 运行 Build-Packages
+        required: false
+        type: boolean
+        default: true
   schedule:
     - cron: 0 20 * * 5  # 北京时间星期六凌晨4点，定时触发
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: trigger-all-workflows-${{ github.repository }}
+  cancel-in-progress: false
 
 jobs:
 
     JDCloud-NoWiFi-ImmortalWrt:
+      if: ${{ github.event_name == 'schedule' || inputs.jdcloud_nowifi_immortalwrt }}
       uses: ./.github/workflows/JDCloud-NoWiFi-ImmortalWrt.yml
+      permissions:
+        contents: write
+        actions: write
 
     x86-64-ImmortalWrt:
+      if: ${{ github.event_name == 'schedule' || inputs.x86_64_immortalwrt }}
       uses: ./.github/workflows/x86-64-ImmortalWrt.yml
+      permissions:
+        contents: write
+        actions: write
+
+    Build-Packages:
+      if: ${{ github.event_name == 'schedule' || inputs.build_packages }}
+      uses: ./.github/workflows/Build-Packages.yml
+      permissions:
+        contents: write
+        actions: read
+      with:
+        sdk_version: ALL
