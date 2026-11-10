@@ -291,11 +291,6 @@ if package_enabled luci-app-lucky lucky; then
   clone_repository https://github.com/gdy666/luci-app-lucky main package/luci-app-lucky
 fi
 
-if package_enabled luci-app-adguardhome adguardhome; then
-  rm -rf feeds/packages/net/adguardhome
-  git_sparse_clone master https://github.com/kenzok8/openwrt-packages adguardhome luci-app-adguardhome
-fi
-
 if package_enabled luci-app-wechatpush; then
   rm -rf feeds/luci/applications/luci-app-wechatpush
   clone_repository https://github.com/tty228/luci-app-wechatpush master package/luci-app-wechatpush
